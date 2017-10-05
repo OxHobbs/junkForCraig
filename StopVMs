@@ -1,0 +1,34 @@
+[CmdletBinding()]
+
+param
+(
+    [Parameter(Mandatory)]
+    [String] $SubscriptionName
+)
+
+Write-Verbose "Beginning call to Shutdown VMs at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+
+$conn = Get-AutomationConnection -Name AzureRunAsConnection
+$account = Add-AzureRMAccount -ServicePrincipal -Tenant $conn.TenantID -ApplicationID $conn.ApplicationID -CertificateThumbprint $conn.CertificateThumbprint -EnvironmentName AzureUSGovernment
+$sub = Select-AzureRmSubscription -SubscriptionName $SubscriptionName -ErrorAction Stop
+
+function Get-VMPowerState
+{
+    param ($VMid) 
+    $resource = Get-AzureRmResource -ResourceId $VMid
+    $vmPowerState = (Get-AzureRmVM -ResourceGroupName $resource.ResourceGroupName -Name $resource.Name -Status).Statuses | where-object { $_.Code -match 'PowerState' }
+    $vmPowerState.Code.Split('/')[1]    
+}
+
+# PowerOff if needed
+$vms = Get-AzureRmVM
+
+foreach ($vm in $vms)
+{
+    $vmPowerState = Get-VMPowerState -VMid $vm.Id
+
+    if ($vmPowerState -eq 'Running')
+    {
+        Stop-AzureRmVM -Force -Name $vm.Name -ResourceGroupName $vm.ResourceGroupName
+    }
+}
